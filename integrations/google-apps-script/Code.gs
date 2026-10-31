@@ -11,12 +11,12 @@ const VISC = {
   // Exact Google Form question titles (case-sensitive).
   fields: {
     team: "Team Name",
-    email: "Contact Email",
+    email: "Email",
     leader: "Team Leader",
     model: "Model Name",
     authorType: "Author Type",
     notes: "Notes",
-    predictionFile: "Prediction JSON File"
+    predictionFile: "Prediction File"
   },
   submissionsSheet: "ViSC_Submissions",
   headers: [
