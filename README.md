@@ -166,3 +166,20 @@ Configure these GitHub Actions secrets for status callbacks:
 The matching Apps Script project property is `CALLBACK_TOKEN`. The bridge also requires `GITHUB_OWNER`, `GITHUB_REPO`, and `GITHUB_TOKEN` Script Properties.
 
 **Participant file privacy:** the current evaluator downloads prediction files with `gdown`, which requires link-view access. The Apps Script bridge checks that a submitted prediction file already has this permission; it does not change file sharing automatically. Disclose this to participants before launch. For private prediction files, replace `gdown` with authenticated Google Drive API access before accepting real submissions. Keep the response spreadsheet restricted to organizers.
+
+
+### Current Google Form field mapping
+
+The Apps Script field labels are configured to match the organizer-provided form:
+
+| Google Form question title | Handling |
+|---|---|
+| `Team Name` | Required; used for duplicate-team enforcement |
+| `Email` | Required; stored privately in the tracking sheet |
+| `Team Leader` | Required; stored privately in the tracking sheet |
+| `Model Name` | Optional; displayed on the public leaderboard |
+| `Prediction File` | Required Google Drive file upload |
+
+The script defaults `author_type` to `human` and `notes` to an empty value because those questions were not included in the supplied form-field list. The active policy is one submission per team. A repeated team name is rejected case-insensitively, including after a previous submission has failed; organizers must resolve or explicitly reset a team's record rather than silently allowing another attempt.
+
+No live Google Form or response spreadsheet URL was supplied, so the Apps Script cannot be attached to the actual Google account or its trigger deployed from this repository. Follow the setup steps in the Organizer Guide after opening the linked response spreadsheet.
