@@ -185,6 +185,16 @@ function getOrCreateSubmissionsSheet_(ss) {
   if (sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, VISC.headers.length).setValues([VISC.headers]);
     sheet.setFrozenRows(1);
+  } else {
+    // Add newly introduced audit columns at the end; never replace existing data.
+    const currentWidth = Math.max(sheet.getLastColumn(), 1);
+    const currentHeaders = sheet.getRange(1, 1, 1, currentWidth)
+      .getValues()[0].map(value => String(value).trim());
+    VISC.headers.forEach((header, index) => {
+      if (!currentHeaders[index]) {
+        sheet.getRange(1, index + 1).setValue(header);
+      }
+    });
   }
   return sheet;
 }
@@ -202,6 +212,12 @@ function findTeamRow_(sheet, team) {
     if (String(teams[i][0]).trim().toLocaleLowerCase() === target) return i + 2;
   }
   return null;
+}
+
+function findImportedSourceRow_(sheet, sourceRow) {
+  if (sheet.getLastRow() < 2 || sheet.getLastColumn() < 16) return false;
+  const rows = sheet.getRange(2, 16, sheet.getLastRow() - 1, 1).getValues();
+  return rows.some(value => Number(value[0]) === Number(sourceRow));
 }
 
 function findSubmissionRow_(sheet, submissionId) {
@@ -292,6 +308,7 @@ function setupSubmissionsSheet() {
 
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
+      if (findImportedSourceRow_(tracking, i + 1)) continue;
       const team = cellText_(row, indexes.team);
       if (!team) continue;
       const email = cellText_(row, indexes.email);
