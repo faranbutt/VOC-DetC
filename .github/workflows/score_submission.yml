@@ -86,8 +86,7 @@ jobs:
         run: |
           python3 competition/update_leaderboard.py \
             --metadata-file submissions/temp/metadata.json \
-            --metrics-file submissions/temp/metrics.json \
-            --submission-file "${{ github.event.client_payload.file_id }}"
+            --metrics-file submissions/temp/metrics.json
 
       - name: Render HTML Leaderboard
         run: |
