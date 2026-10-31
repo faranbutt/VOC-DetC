@@ -75,7 +75,7 @@ def main(pred_path: str, images_test_path: str) -> None:
             if width <= 0 or height <= 0:
                 raise SystemExit(f"Error: row {index} bbox width and height must be positive.")
             image = images[image_id]
-            if x < 0 or y < 0 or x + width > int(image["width"]) + 1 or y + height > int(image["height"]) + 1:
+            if x < 0 or y < 0 or x + width > int(image["width"]) or y + height > int(image["height"]):
                 raise SystemExit(f"Error: row {index} bbox lies outside image {image_id}.")
         else:
             segmentation = prediction["segmentation"]
