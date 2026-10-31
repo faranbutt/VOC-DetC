@@ -46,6 +46,9 @@ jobs:
 
           try:
               metadata = json.loads(os.environ.get("METADATA", ""))
+              # Accept both an object payload and a JSON-encoded metadata string.
+              if isinstance(metadata, str):
+                  metadata = json.loads(metadata)
           except json.JSONDecodeError as exc:
               raise SystemExit(f"Invalid dispatch metadata JSON: {exc}")
           if not isinstance(metadata, dict):
