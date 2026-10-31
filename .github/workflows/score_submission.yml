@@ -49,7 +49,7 @@ jobs:
         env:
           FILE_ID: ${{ github.event.client_payload.file_id }}
         run: |
-          gdown --id "$FILE_ID" -O submissions/temp/prediction.json
+          gdown "$FILE_ID" -O submissions/temp/prediction.json
 
       - name: Validate Submission
         run: |
