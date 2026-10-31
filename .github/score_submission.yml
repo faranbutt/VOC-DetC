@@ -1,5 +1,4 @@
 name: Score Private Submission
-
 on:
   repository_dispatch:
     types: [form_submission]
