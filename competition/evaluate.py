@@ -46,22 +46,36 @@ def main():
     evaluator = COCOeval(gt, dt, iouType=args.task)
     evaluator.params.imgIds = sorted(allowed_image_ids)
     evaluator.params.catIds = sorted(allowed_category_ids)
-    evaluator.evaluate()
-    evaluator.accumulate()
+    
+    try:
+        evaluator.evaluate()
+        evaluator.accumulate()
+        
+        s = evaluator.stats
+        
+        # Safety check: If COCOeval fails to generate stats, return 0.0
+        if len(s) == 0:
+            print("Warning: COCOeval returned empty stats. Returning 0.0 metrics.")
+            metrics = ZERO_METRICS.copy()
+            metrics["prediction_count"] = len(preds)
+        else:
+            metrics = {
+                "AP": float(s[0]),
+                "AP50": float(s[1]),
+                "AP75": float(s[2]),
+                "AP_small": float(s[3]),
+                "AP_medium": float(s[4]),
+                "AP_large": float(s[5]),
+                "AR1": float(s[6]),
+                "AR10": float(s[7]),
+                "AR100": float(s[8]),
+                "prediction_count": len(preds),
+            }
+    except Exception as e:
+        print(f"Error during evaluation: {e}")
+        metrics = ZERO_METRICS.copy()
+        metrics["prediction_count"] = len(preds)
 
-    s = evaluator.stats
-    metrics = {
-        "AP": float(s[0]),
-        "AP50": float(s[1]),
-        "AP75": float(s[2]),
-        "AP_small": float(s[3]),
-        "AP_medium": float(s[4]),
-        "AP_large": float(s[5]),
-        "AR1": float(s[6]),
-        "AR10": float(s[7]),
-        "AR100": float(s[8]),
-        "prediction_count": len(preds),
-    }
     print(json.dumps(metrics, indent=2))
 
 
