@@ -152,3 +152,17 @@ See [Organizer Guide](docs/ORGANIZER_GUIDE.md) for secrets, dispatch payload req
 ## License and dataset attribution
 
 Follow the license and attribution requirements of the source dataset and any separately distributed assets. The competition organizers should ensure that the applicable dataset license permits the intended redistribution and competition use.
+
+
+## Google Forms submission integration
+
+The Google Apps Script bridge is provided in [integrations/google-apps-script/Code.gs](integrations/google-apps-script/Code.gs). Bind it to the Google Form response spreadsheet, configure the required Apps Script properties, install the spreadsheet form-submit trigger, and deploy its callback web app. The bridge creates a private `ViSC_Submissions` tracking tab, dispatches submissions to GitHub Actions, and receives scoring status and headline metrics.
+
+Configure these GitHub Actions secrets for status callbacks:
+
+- `GOOGLE_SHEETS_CALLBACK_URL`
+- `GOOGLE_SHEETS_CALLBACK_TOKEN`
+
+The matching Apps Script project property is `CALLBACK_TOKEN`. The bridge also requires `GITHUB_OWNER`, `GITHUB_REPO`, and `GITHUB_TOKEN` Script Properties.
+
+**Participant file privacy:** the current evaluator downloads prediction files with `gdown`, which requires link-view access. The Apps Script bridge checks that a submitted prediction file already has this permission; it does not change file sharing automatically. Disclose this to participants before launch. For private prediction files, replace `gdown` with authenticated Google Drive API access before accepting real submissions. Keep the response spreadsheet restricted to organizers.
