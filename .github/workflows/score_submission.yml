@@ -38,12 +38,12 @@ jobs:
               json.dump(m, f, indent=2)
           print(f"team={m.get('team','unknown')}")
           PY
-
+      
       - name: Download Hidden Ground Truth
         env:
           HIDDEN_ID: ${{ secrets.HIDDEN_ANNOTATIONS_FILE_ID }}
         run: |
-          gdown --id "$HIDDEN_ID" -O data/private/hidden_test_annotations.json
+          gdown "$HIDDEN_ID" -O data/private/hidden_test_annotations.json
 
       - name: Download Participant Prediction
         env:
