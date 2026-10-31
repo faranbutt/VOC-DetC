@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from pycocotools.coco import COCO
@@ -24,12 +25,13 @@ def main():
     preds = json.loads(args.predictions.read_text(encoding="utf-8"))
     gt_data = json.loads(args.ground_truth.read_text(encoding="utf-8"))
 
+    if not preds:
+        metrics = ZERO_METRICS.copy()
+        print(json.dumps(metrics, indent=2))
+        return
+
     allowed_image_ids = {int(x["id"]) for x in gt_data["images"]}
     allowed_category_ids = {int(c["id"]) for c in gt_data["categories"]}
-
-    if not preds:
-        print(json.dumps(ZERO_METRICS, indent=2))
-        return
 
     normalized = []
     for pred in preds:
@@ -50,12 +52,11 @@ def main():
     try:
         evaluator.evaluate()
         evaluator.accumulate()
-        
         s = evaluator.stats
         
-        # Safety check: If COCOeval fails to generate stats, return 0.0
-        if len(s) == 0:
-            print("Warning: COCOeval returned empty stats. Returning 0.0 metrics.")
+        # If COCOeval fails to generate stats, return zeros instead of crashing
+        if len(s) < 9:
+            sys.stderr.write("Warning: COCOeval returned empty or invalid stats. Returning 0.0 metrics.\n")
             metrics = ZERO_METRICS.copy()
             metrics["prediction_count"] = len(preds)
         else:
@@ -72,7 +73,8 @@ def main():
                 "prediction_count": len(preds),
             }
     except Exception as e:
-        print(f"Error during evaluation: {e}")
+        # Use sys.stderr instead of print() so it doesn't corrupt the JSON file!
+        sys.stderr.write(f"Error during evaluation: {e}\n")
         metrics = ZERO_METRICS.copy()
         metrics["prediction_count"] = len(preds)
 
