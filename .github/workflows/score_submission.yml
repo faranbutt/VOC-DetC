@@ -122,12 +122,14 @@ jobs:
         run: python competition/render_leaderboard.py
 
       - name: Commit leaderboard update
+        env:
+          TEAM_NAME: ${{ steps.meta.outputs.team }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add leaderboard/leaderboard.csv leaderboard/leaderboard.md docs/index.html
           if ! git diff --cached --quiet; then
-            git commit -m "Score competition submission: ${{ steps.meta.outputs.team }}"
+            git commit -m "Score competition submission: ${TEAM_NAME}"
             git push origin HEAD:main
           else
             echo "No leaderboard changes to commit."
