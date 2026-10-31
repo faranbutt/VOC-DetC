@@ -8,7 +8,6 @@ import yaml
 
 HEADERS = [
     "timestamp_utc", "team", "run_id", "author_type", "model", "notes",
-    "submission_file",
     "AP", "AP50", "AP75",
     "AP_small", "AP_medium", "AP_large",
     "AR1", "AR10", "AR100", "prediction_count",
@@ -19,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--metadata-file", required=True, type=Path)
     parser.add_argument("--metrics-file", required=True, type=Path)
-    parser.add_argument("--submission-file", required=True)
+    
     args = parser.parse_args()
 
     cfg = yaml.safe_load(open("competition/config.yaml", encoding="utf-8"))
@@ -50,7 +49,6 @@ def main():
         "author_type": str(meta.get("author_type", "human")),
         "model": str(meta.get("model", "unknown")),
         "notes": str(meta.get("notes", "")),
-        "submission_file": args.submission_file,
     }
     row.update(metrics)
     rows.append(row)

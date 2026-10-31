@@ -22,3 +22,6 @@ Detection:
   {"image_id": 301, "category_id": 1, "bbox": [120.0, 80.0, 90.0, 110.0], "score": 0.93}
 ]
 ```
+
+## Form to Submit:
+https://docs.google.com/forms/d/e/1FAIpQLSfR0vFHvkZT-qMUHREBfsOMJyeZCzhfPJ_omtaEPvWJyUGLHw/viewform
