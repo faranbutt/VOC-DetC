@@ -138,6 +138,42 @@ jobs:
             echo "No leaderboard changes to commit."
           fi
 
+      - name: Notify Google Sheets of scoring result
+        if: always() && env.CALLBACK_URL != '' && env.CALLBACK_TOKEN != ''
+        env:
+          CALLBACK_URL: ${{ secrets.GOOGLE_SHEETS_CALLBACK_URL }}
+          CALLBACK_TOKEN: ${{ secrets.GOOGLE_SHEETS_CALLBACK_TOKEN }}
+          SUBMISSION_ID: ${{ github.event.client_payload.submission_id }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          RESULT_STATUS: ${{ job.status == 'success' && 'SUCCESS' || 'FAILED' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          metrics_path = Path("submissions/temp/metrics.json")
+          metrics = json.loads(metrics_path.read_text()) if metrics_path.is_file() else {}
+          payload = {
+              "token": os.environ["CALLBACK_TOKEN"],
+              "submission_id": os.environ.get("SUBMISSION_ID", ""),
+              "status": os.environ["RESULT_STATUS"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "metrics": metrics,
+              "error_message": "" if os.environ["RESULT_STATUS"] == "SUCCESS" else
+                  "Evaluation workflow failed. Organizer should inspect GitHub Actions logs."
+          }
+          request = urllib.request.Request(
+              os.environ["CALLBACK_URL"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              print("Google Sheets callback HTTP", response.status)
+          PY
+
       - name: Remove private evaluation files
         if: always()
         run: |
