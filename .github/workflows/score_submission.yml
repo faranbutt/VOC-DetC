@@ -1,90 +1,139 @@
 name: Score Private Submission
+
 on:
   repository_dispatch:
     types: [form_submission]
 
+concurrency:
+  group: viscb-competition-leaderboard
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: main
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
-          pip install -q -r requirements.txt
-          # Ensure gdown is installed for Google Drive downloads
-          pip install -q gdown pycocotools pyyaml numpy
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-      - name: Extract Metadata from Dispatch
+      - name: Validate dispatch metadata
         id: meta
         env:
-          METADATA: ${{ github.event.client_payload.metadata }}
+          METADATA: \${{ toJSON(github.event.client_payload.metadata) }}
         run: |
           mkdir -p submissions/temp data/private
-          python3 - <<'PY' >> $GITHUB_OUTPUT
-          import json, os
-          m = json.loads(os.environ["METADATA"])
-          with open("submissions/temp/metadata.json", "w") as f:
-              json.dump(m, f, indent=2)
-          print(f"team={m.get('team','unknown')}")
-          PY
-      
-      - name: Download Hidden Ground Truth
-        env:
-          HIDDEN_ID: ${{ secrets.HIDDEN_ANNOTATIONS_FILE_ID }}
-        run: |
-          gdown "$HIDDEN_ID" -O data/private/hidden_test_annotations.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Download Participant Prediction
+          try:
+              metadata = json.loads(os.environ.get("METADATA", ""))
+          except json.JSONDecodeError as exc:
+              raise SystemExit(f"Invalid dispatch metadata JSON: {exc}")
+          if not isinstance(metadata, dict):
+              raise SystemExit("Dispatch metadata must be a JSON object.")
+
+          team = str(metadata.get("team", "")).strip()
+          if not team or len(team) > 80 or any(ord(c) < 32 for c in team):
+              raise SystemExit("Metadata must contain a valid team name (1-80 printable characters).")
+
+          Path("submissions/temp/metadata.json").write_text(
+              json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          safe_team = team.replace("%", "%25").replace("\n", "%0A").replace("\r", "%0D")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"team={safe_team}\n")
+          PY
+
+      - name: Validate Google Drive file ID
         env:
-          FILE_ID: ${{ github.event.client_payload.file_id }}
+          FILE_ID: \${{ github.event.client_payload.file_id }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          value = os.environ.get("FILE_ID", "")
+          if not re.fullmatch(r"[A-Za-z0-9_-]{10,200}", value):
+              raise SystemExit("Invalid or missing Google Drive file ID.")
+          PY
+
+      - name: Download hidden ground truth
+        env:
+          HIDDEN_ID: \${{ secrets.HIDDEN_ANNOTATIONS_FILE_ID }}
+        run: |
+          test -n "$HIDDEN_ID" || { echo "Missing HIDDEN_ANNOTATIONS_FILE_ID secret"; exit 1; }
+          gdown "$HIDDEN_ID" -O data/private/hidden_test_annotations.json
+          test -s data/private/hidden_test_annotations.json
+          python -m json.tool data/private/hidden_test_annotations.json > /dev/null
+
+      - name: Download participant predictions
+        env:
+          FILE_ID: \${{ github.event.client_payload.file_id }}
         run: |
           gdown "$FILE_ID" -O submissions/temp/prediction.json
+          test -s submissions/temp/prediction.json
+          python -m json.tool submissions/temp/prediction.json > /dev/null
 
-      - name: Validate Submission
+      - name: Validate submission
         run: |
-          python3 competition/validate_submission.py \
+          python competition/validate_submission.py \
             submissions/temp/prediction.json \
             data/public/annotations/images_test.json
 
-      - name: Evaluate Submission
+      - name: Evaluate submission
         run: |
-          IOU_TYPE=$(python3 -c "import yaml; print(yaml.safe_load(open('competition/config.yaml'))['iou_type'])")
-          python3 competition/evaluate.py \
+          IOU_TYPE=$(python -c "import yaml; print(yaml.safe_load(open('competition/config.yaml', encoding='utf-8'))['iou_type'])")
+          python competition/evaluate.py \
             --ground-truth data/private/hidden_test_annotations.json \
             --predictions submissions/temp/prediction.json \
             --task "$IOU_TYPE" \
-            > submissions/temp/metrics.json
-          cat submissions/temp/metrics.json
+            --output submissions/temp/metrics.json
+          test -s submissions/temp/metrics.json
+          python -m json.tool submissions/temp/metrics.json
 
-      - name: Update Leaderboard
+      - name: Update leaderboard
+        env:
+          SUBMISSION_REF: submission-\${{ github.run_id }}-\${{ github.run_attempt }}
         run: |
-          python3 competition/update_leaderboard.py \
+          python competition/update_leaderboard.py \
             --metadata-file submissions/temp/metadata.json \
             --metrics-file submissions/temp/metrics.json \
-            --submission-file "${{ github.event.client_payload.file_id }}"
+            --submission-file "$SUBMISSION_REF"
 
-      - name: Render HTML Leaderboard
+      - name: Render leaderboard
+        run: python competition/render_leaderboard.py
+
+      - name: Commit leaderboard update
         run: |
-          python3 competition/render_leaderboard.py
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add leaderboard/leaderboard.csv leaderboard/leaderboard.md docs/index.html
+          if ! git diff --cached --quiet; then
+            git commit -m "Score competition submission: \${{ steps.meta.outputs.team }}"
+            git push origin HEAD:main
+          else
+            echo "No leaderboard changes to commit."
+          fi
 
-      - name: Commit and Push Updates
+      - name: Remove private evaluation files
+        if: always()
         run: |
           rm -rf submissions/temp data/private
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add leaderboard/leaderboard.csv docs/index.html
-          if ! git diff --staged --quiet; then
-            git commit -m "Score update: ${{ steps.meta.outputs.team }}"
-            git push origin main
-          fi
