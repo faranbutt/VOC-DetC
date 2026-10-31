@@ -1,0 +1,4 @@
+pycocotools>=2.0.7
+PyYAML>=6.0
+numpy>=1.24
+gdown>=5.1.0

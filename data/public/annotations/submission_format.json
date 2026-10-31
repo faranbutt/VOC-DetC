@@ -1,0 +1,26 @@
+{
+  "format": "COCO results JSON array",
+  "detection_record": {
+    "image_id": "integer from annotations/images_test.json",
+    "category_id": "one of the public category IDs",
+    "bbox": [
+      "x",
+      "y",
+      "width",
+      "height"
+    ],
+    "score": "confidence between 0 and 1"
+  },
+  "segmentation_record": {
+    "image_id": "integer from annotations/images_test.json",
+    "category_id": "one of the public category IDs",
+    "segmentation": "COCO polygon list or COCO RLE",
+    "score": "confidence between 0 and 1"
+  },
+  "notes": [
+    "Coordinates refer to the provided resized test images.",
+    "Use category_id values exactly as listed in images_test.json.",
+    "For segmentation submissions, provide segmentation; bbox is optional.",
+    "Do not submit ground-truth annotations."
+  ]
+}

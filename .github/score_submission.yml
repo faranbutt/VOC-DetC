@@ -1,0 +1,93 @@
+name: Score Private Submission
+
+on:
+  repository_dispatch:
+    types: [form_submission]
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -q -r requirements.txt
+          # Ensure gdown is installed for Google Drive downloads
+          pip install -q gdown pycocotools pyyaml numpy
+
+      - name: Extract Metadata from Dispatch
+        id: meta
+        env:
+          METADATA: ${{ github.event.client_payload.metadata }}
+        run: |
+          mkdir -p submissions/temp data/private
+          python3 - <<'PY' >> $GITHUB_OUTPUT
+          import json, os
+          m = json.loads(os.environ["METADATA"])
+          with open("submissions/temp/metadata.json", "w") as f:
+              json.dump(m, f, indent=2)
+          print(f"team={m.get('team','unknown')}")
+          PY
+
+      - name: Download Hidden Ground Truth
+        env:
+          HIDDEN_ID: ${{ secrets.HIDDEN_ANNOTATIONS_FILE_ID }}
+        run: |
+          gdown --id "$HIDDEN_ID" -O data/private/hidden_test_annotations.json
+
+      - name: Download Participant Prediction
+        env:
+          FILE_ID: ${{ github.event.client_payload.file_id }}
+        run: |
+          gdown --id "$FILE_ID" -O submissions/temp/prediction.json
+
+      - name: Validate Submission
+        run: |
+          python3 competition/validate_submission.py \
+            submissions/temp/prediction.json \
+            data/public/annotations/images_test.json
+
+      - name: Evaluate Submission
+        run: |
+          IOU_TYPE=$(python3 -c "import yaml; print(yaml.safe_load(open('competition/config.yaml'))['iou_type'])")
+          python3 competition/evaluate.py \
+            --ground-truth data/private/hidden_test_annotations.json \
+            --predictions submissions/temp/prediction.json \
+            --task "$IOU_TYPE" \
+            > submissions/temp/metrics.json
+          cat submissions/temp/metrics.json
+
+      - name: Update Leaderboard
+        run: |
+          python3 competition/update_leaderboard.py \
+            --metadata-file submissions/temp/metadata.json \
+            --metrics-file submissions/temp/metrics.json \
+            --submission-file "${{ github.event.client_payload.file_id }}"
+
+      - name: Render HTML Leaderboard
+        run: |
+          python3 competition/render_leaderboard.py
+
+      - name: Commit and Push Updates
+        run: |
+          rm -rf submissions/temp data/private
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add leaderboard/leaderboard.csv docs/index.html
+          if ! git diff --staged --quiet; then
+            git commit -m "Score update: ${{ steps.meta.outputs.team }}"
+            git push origin main
+          fi
