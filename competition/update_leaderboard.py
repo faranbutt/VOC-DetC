@@ -26,7 +26,10 @@ def main():
     meta = json.loads(args.metadata_file.read_text(encoding="utf-8"))
     metrics = json.loads(args.metrics_file.read_text(encoding="utf-8"))
 
-    team = str(meta.get("team", "unknown"))
+    team = str(meta.get("team", "")).strip()
+
+    if not team:
+        raise SystemExit("Error: Missing team name in submission metadata.")
     csv_path = Path("leaderboard/leaderboard.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -35,9 +38,10 @@ def main():
         with csv_path.open("r", newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
 
-    if cfg.get("one_submission_per_team", True) and any(r.get("team") == team for r in rows):
-        print(f"Submission rejected: team '{team}' already exists.")
-        return
+    if cfg.get("one_submission_per_team", True) and any(
+    (r.get("team") or "").strip().casefold() == team.strip().casefold()
+    for r in rows):
+        raise SystemExit(f"Submission rejected: team '{team}' already exists.")
 
     row = {
         "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),

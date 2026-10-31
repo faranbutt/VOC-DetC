@@ -1,4 +1,4 @@
 task: detection
 iou_type: bbox
 metric: coco_ap
-one_submission_per_team: true
+one_submission_per_team: false

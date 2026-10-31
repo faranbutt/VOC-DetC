@@ -65,6 +65,7 @@ jobs:
             --predictions submissions/temp/prediction.json \
             --task "$IOU_TYPE" \
             > submissions/temp/metrics.json
+          python3 -m json.tool submissions/temp/metrics.json > /dev/null
           cat submissions/temp/metrics.json
 
       - name: Update Leaderboard
