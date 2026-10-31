@@ -1,91 +1,69 @@
 import argparse
 import json
+import math
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
-try:
-    from pycocotools.coco import COCO
-    from pycocotools.cocoeval import COCOeval
-except ImportError:
-    sys.stderr.write("pycocotools not installed\n")
-    sys.exit(1)
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 
-ZERO_METRICS = {
-    "AP": 0.0, "AP50": 0.0, "AP75": 0.0,
-    "AP_small": 0.0, "AP_medium": 0.0, "AP_large": 0.0,
-    "AR1": 0.0, "AR10": 0.0, "AR100": 0.0,
-    "prediction_count": 0,
-}
+METRIC_KEYS = (
+    "AP", "AP50", "AP75", "AP_small", "AP_medium", "AP_large",
+    "AR1", "AR10", "AR100",
+)
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ground-truth", required=True, type=Path)
-    parser.add_argument("--predictions", required=True, type=Path)
-    parser.add_argument("--task", choices=["bbox", "segm"], required=True)
-    args = parser.parse_args()
+def evaluate(ground_truth_path: Path, predictions_path: Path, iou_type: str) -> dict:
+    predictions = json.loads(predictions_path.read_text(encoding="utf-8"))
+    gt_data = json.loads(ground_truth_path.read_text(encoding="utf-8"))
+    if not isinstance(predictions, list):
+        raise ValueError("Predictions must be a JSON array.")
+    if not isinstance(gt_data, dict):
+        raise ValueError("Ground truth must be a COCO JSON object.")
+    if not predictions:
+        return {**{key: 0.0 for key in METRIC_KEYS}, "prediction_count": 0}
 
-    metrics = ZERO_METRICS.copy()
+    image_ids = sorted(int(image["id"]) for image in gt_data["images"])
+    category_ids = sorted(int(category["id"]) for category in gt_data["categories"])
 
-    try:
-        preds = json.loads(args.predictions.read_text(encoding="utf-8"))
-        gt_data = json.loads(args.ground_truth.read_text(encoding="utf-8"))
-        
-        if not preds:
-            print(json.dumps(metrics, indent=2))
-            return
-
-        metrics["prediction_count"] = len(preds)
-
-        allowed_image_ids = {int(x["id"]) for x in gt_data["images"]}
-        allowed_category_ids = {int(c["id"]) for c in gt_data["categories"]}
-
-        normalized = []
-        for pred in preds:
-            p = dict(pred)
-            if args.task == "segm":
-                p.pop("bbox", None)
-            # Clean up invalid boxes to prevent pycocotools from crashing
-            if args.task == "bbox" and "bbox" in p:
-                bbox = p["bbox"]
-                if float(bbox[2]) <= 0 or float(bbox[3]) <= 0:
-                    continue 
-            normalized.append(p)
-
-        if not normalized:
-            print(json.dumps(metrics, indent=2))
-            return
-
-        gt = COCO(str(args.ground_truth))
-        gt.dataset.setdefault("info", {})
-        gt.dataset.setdefault("licenses", [])
-
-        dt = gt.loadRes(normalized)
-        evaluator = COCOeval(gt, dt, iouType=args.task)
-        evaluator.params.imgIds = sorted(allowed_image_ids)
-        evaluator.params.catIds = sorted(allowed_category_ids)
-        
+    # Keep pycocotools diagnostics off stdout; stdout is reserved for JSON.
+    with redirect_stdout(sys.stderr):
+        coco_gt = COCO(str(ground_truth_path))
+        coco_gt.dataset.setdefault("info", {})
+        coco_gt.dataset.setdefault("licenses", [])
+        coco_dt = coco_gt.loadRes(predictions)
+        evaluator = COCOeval(coco_gt, coco_dt, iouType=iou_type)
+        evaluator.params.imgIds = image_ids
+        evaluator.params.catIds = category_ids
         evaluator.evaluate()
         evaluator.accumulate()
-        s = evaluator.stats
-        
-        if len(s) >= 9:
-            metrics = {
-                "AP": float(s[0]) if s[0] > -1 else 0.0,
-                "AP50": float(s[1]) if s[1] > -1 else 0.0,
-                "AP75": float(s[2]) if s[2] > -1 else 0.0,
-                "AP_small": float(s[3]) if s[3] > -1 else 0.0,
-                "AP_medium": float(s[4]) if s[4] > -1 else 0.0,
-                "AP_large": float(s[5]) if s[5] > -1 else 0.0,
-                "AR1": float(s[6]) if s[6] > -1 else 0.0,
-                "AR10": float(s[7]) if s[7] > -1 else 0.0,
-                "AR100": float(s[8]) if s[8] > -1 else 0.0,
-                "prediction_count": len(preds),
-            }
-    except Exception as e:
-        sys.stderr.write(f"Error during evaluation: {e}\n")
+        # stats is populated by summarize(), not accumulate().
+        evaluator.summarize()
+        stats = evaluator.stats
 
-    # ALWAYS print valid JSON to stdout, even if an error occurred above
-    print(json.dumps(metrics, indent=2))
+    if len(stats) < 9:
+        raise RuntimeError(f"COCOeval returned {len(stats)} summary values; expected at least 9.")
+    values = [float(value) for value in stats[:9]]
+    if any(not math.isfinite(value) for value in values):
+        raise RuntimeError("COCOeval returned a non-finite metric.")
+    return {
+        key: (value if value >= 0 else 0.0)
+        for key, value in zip(METRIC_KEYS, values)
+    } | {"prediction_count": len(predictions)}
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate COCO-format competition predictions.")
+    parser.add_argument("--ground-truth", required=True, type=Path)
+    parser.add_argument("--predictions", required=True, type=Path)
+    parser.add_argument("--task", choices=("bbox", "segm"), required=True)
+    parser.add_argument("--output", type=Path, help="Optional path for metrics JSON.")
+    args = parser.parse_args()
+    metrics = evaluate(args.ground_truth, args.predictions, args.task)
+    serialized = json.dumps(metrics, indent=2, allow_nan=False) + "\n"
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(serialized, encoding="utf-8")
+    print(serialized, end="")
 
 if __name__ == "__main__":
     main()
