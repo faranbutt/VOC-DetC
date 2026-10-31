@@ -78,10 +78,13 @@ function onFormSubmit(e) {
       model, authorType, notes, fileId, "RECEIVED", "", "", "", "", ""
     ]);
 
-    // Ensure the Actions runner can download the prediction file with gdown.
-    // This grants link-based read access to this prediction file only.
+    // Never change participant file permissions automatically.
+    // Organizer must explicitly configure link-view access, or migrate to
+    // authenticated Drive API access for private participant files.
     const file = DriveApp.getFileById(fileId);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+      throw new Error("Prediction file must be configured for Anyone with the link (Viewer) before scoring. Inform participants about this access requirement.");
+    }
 
     const payload = {
       event_type: "form_submission",
