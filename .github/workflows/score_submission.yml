@@ -36,7 +36,7 @@ jobs:
       - name: Validate dispatch metadata
         id: meta
         env:
-          METADATA: \${{ toJSON(github.event.client_payload.metadata) }}
+          METADATA: ${{ toJSON(github.event.client_payload.metadata) }}
         run: |
           mkdir -p submissions/temp data/private
           python - <<'PY'
@@ -65,7 +65,7 @@ jobs:
 
       - name: Validate Google Drive file ID
         env:
-          FILE_ID: \${{ github.event.client_payload.file_id }}
+          FILE_ID: ${{ github.event.client_payload.file_id }}
         run: |
           python - <<'PY'
           import os
@@ -77,7 +77,7 @@ jobs:
 
       - name: Download hidden ground truth
         env:
-          HIDDEN_ID: \${{ secrets.HIDDEN_ANNOTATIONS_FILE_ID }}
+          HIDDEN_ID: ${{ secrets.HIDDEN_ANNOTATIONS_FILE_ID }}
         run: |
           test -n "$HIDDEN_ID" || { echo "Missing HIDDEN_ANNOTATIONS_FILE_ID secret"; exit 1; }
           gdown "$HIDDEN_ID" -O data/private/hidden_test_annotations.json
@@ -86,7 +86,7 @@ jobs:
 
       - name: Download participant predictions
         env:
-          FILE_ID: \${{ github.event.client_payload.file_id }}
+          FILE_ID: ${{ github.event.client_payload.file_id }}
         run: |
           gdown "$FILE_ID" -O submissions/temp/prediction.json
           test -s submissions/temp/prediction.json
@@ -111,7 +111,7 @@ jobs:
 
       - name: Update leaderboard
         env:
-          SUBMISSION_REF: submission-\${{ github.run_id }}-\${{ github.run_attempt }}
+          SUBMISSION_REF: submission-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           python competition/update_leaderboard.py \
             --metadata-file submissions/temp/metadata.json \
@@ -127,7 +127,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add leaderboard/leaderboard.csv leaderboard/leaderboard.md docs/index.html
           if ! git diff --cached --quiet; then
-            git commit -m "Score competition submission: \${{ steps.meta.outputs.team }}"
+            git commit -m "Score competition submission: ${{ steps.meta.outputs.team }}"
             git push origin HEAD:main
           else
             echo "No leaderboard changes to commit."
