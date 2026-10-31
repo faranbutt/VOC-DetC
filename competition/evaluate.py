@@ -39,13 +39,6 @@ def main():
         if args.task == "segm":
             p.pop("bbox", None)
         normalized.append(p)
-
-    gt = COCO(str(args.ground_truth))
-    gt.dataset.setdefault("info", {})
-    gt.dataset.setdefault("licenses", [])
-
-    dt = gt.loadRes(normalized)
-    evaluator = COCOeval(gt, dt, iouType=args.task)
     try:
         # Keep COCO's progress messages out of the JSON output.
         with contextlib.redirect_stdout(sys.stderr):
