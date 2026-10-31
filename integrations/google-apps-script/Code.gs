@@ -22,7 +22,7 @@ const VISC = {
   headers: [
     "submission_id", "submitted_at_utc", "team", "contact_email",
     "team_leader", "model", "author_type", "notes", "drive_file_id",
-    "status", "github_run_id", "AP", "AP50", "AP75", "error_message"
+    "status", "github_run_id", "AP", "AP50", "AP75", "error_message", "source_response_row"
   ]
 };
 
@@ -44,7 +44,11 @@ function onFormSubmit(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     sheet = getOrCreateSubmissionsSheet_(ss);
+    if (props.getProperty("HISTORICAL_IMPORT_DONE") !== "true") {
+      throw new Error("Run setupSubmissionsSheet() once to import existing responses before enabling submissions.");
+    }
     const values = e.namedValues;
+    const sourceRow = e.range ? e.range.getRow() : "";
 
     const team = requiredField_(values, VISC.fields.team);
     const email = requiredField_(values, VISC.fields.email);
@@ -67,7 +71,7 @@ function onFormSubmit(e) {
       appendRecord_(sheet, [
         Utilities.getUuid(), new Date().toISOString(), team, email, leader,
         model, authorType, notes, fileId, "REJECTED_DUPLICATE", "", "", "", "",
-        "A submission for this team has already been received."
+        "A submission for this team has already been received.", sourceRow
       ]);
       return;
     }
@@ -75,7 +79,7 @@ function onFormSubmit(e) {
     submissionId = Utilities.getUuid();
     rowNumber = appendRecord_(sheet, [
       submissionId, new Date().toISOString(), team, email, leader,
-      model, authorType, notes, fileId, "RECEIVED", "", "", "", "", ""
+      model, authorType, notes, fileId, "RECEIVED", "", "", "", "", "", sourceRow
     ]);
 
     // Never change participant file permissions automatically.
@@ -250,7 +254,95 @@ function jsonResponse_(value) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/** Run once manually to create the tracking tab before enabling the trigger. */
+/**
+ * Run once manually BEFORE enabling the form-submit trigger.
+ * Copies existing response metadata into a separate audit tab without
+ * editing, sorting, clearing, or moving any original response rows.
+ * Historical rows are never dispatched for scoring.
+ */
 function setupSubmissionsSheet() {
-  getOrCreateSubmissionsSheet_(SpreadsheetApp.getActiveSpreadsheet());
+  const props = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const tracking = getOrCreateSubmissionsSheet_(ss);
+    if (props.getProperty("HISTORICAL_IMPORT_DONE") === "true") {
+      return "Historical import already completed; no rows changed.";
+    }
+
+    const source = findFormResponseSheet_(ss);
+    const data = source.getDataRange().getValues();
+    const headers = data[0].map(value => String(value).trim());
+    const indexes = {
+      timestamp: headers.indexOf("Timestamp"),
+      team: headers.indexOf(VISC.fields.team),
+      email: headers.indexOf(VISC.fields.email),
+      leader: headers.indexOf(VISC.fields.leader),
+      model: headers.indexOf(VISC.fields.model),
+      authorType: headers.indexOf(VISC.fields.authorType),
+      notes: headers.indexOf(VISC.fields.notes),
+      predictionFile: headers.indexOf(VISC.fields.predictionFile)
+    };
+
+    if (indexes.team < 0 || indexes.email < 0 || indexes.leader < 0 ||
+        indexes.predictionFile < 0) {
+      throw new Error("The response tab is missing one or more required form columns. No historical rows were imported.");
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const team = cellText_(row, indexes.team);
+      if (!team) continue;
+      const email = cellText_(row, indexes.email);
+      const leader = cellText_(row, indexes.leader);
+      const model = cellText_(row, indexes.model);
+      const authorType = cellText_(row, indexes.authorType) || "human";
+      const notes = cellText_(row, indexes.notes);
+      const fileValue = cellText_(row, indexes.predictionFile);
+      let fileId = "";
+      try {
+        fileId = fileValue ? extractDriveFileId_(fileValue) : "";
+      } catch (ignored) {
+        // Preserve the historical record even if the old upload value is not a Drive URL.
+      }
+      const timestamp = indexes.timestamp >= 0 && row[indexes.timestamp]
+        ? new Date(row[indexes.timestamp]).toISOString()
+        : new Date().toISOString();
+
+      appendRecord_(tracking, [
+        Utilities.getUuid(), timestamp, team, email, leader, model,
+        authorType, notes, fileId, "HISTORICAL_NOT_SCORED", "", "", "", "",
+        "Imported from the pre-integration Form response history; not evaluated.",
+        i + 1
+      ]);
+    }
+
+    props.setProperty("HISTORICAL_IMPORT_DONE", "true");
+    return "Historical responses imported into ViSC_Submissions. Original response rows were not modified.";
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function findFormResponseSheet_(ss) {
+  const candidates = ss.getSheets().filter(sheet => sheet.getName() !== VISC.submissionsSheet);
+  for (const sheet of candidates) {
+    if (sheet.getLastRow() < 1) continue;
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn())
+      .getValues()[0].map(value => String(value).trim());
+    if (headers.includes(VISC.fields.team) &&
+        headers.includes(VISC.fields.email) &&
+        headers.includes(VISC.fields.leader) &&
+        headers.includes(VISC.fields.predictionFile)) {
+      return sheet;
+    }
+  }
+  throw new Error("Could not identify the Google Form response tab from its header row.");
+}
+
+function cellText_(row, index) {
+  return index < 0 || row[index] === null || row[index] === undefined
+    ? ""
+    : String(row[index]).trim();
 }
