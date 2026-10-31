@@ -1,59 +1,93 @@
 import json
+import math
 import sys
 from pathlib import Path
 
 import yaml
 
 
-def main(pred_path, images_test_path):
-    cfg = yaml.safe_load(open("competition/config.yaml", encoding="utf-8"))
-    iou_type = cfg.get("iou_type", "bbox")
+def finite_number(value, label: str, row: int) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise SystemExit(f"Error: row {row} {label} must be numeric.")
+    if not math.isfinite(number):
+        raise SystemExit(f"Error: row {row} {label} must be finite.")
+    return number
 
-    preds = json.loads(Path(pred_path).read_text(encoding="utf-8"))
-    meta = json.loads(Path(images_test_path).read_text(encoding="utf-8"))
 
-    if not isinstance(preds, list):
-        raise SystemExit("Error: submission must be a JSON array of COCO prediction records.")
-    if not preds:
-        raise SystemExit("Error: submission is empty.")
+def main(pred_path: str, images_test_path: str) -> None:
+    config = yaml.safe_load(Path("competition/config.yaml").read_text(encoding="utf-8")) or {}
+    iou_type = config.get("iou_type", "bbox")
+    if iou_type not in ("bbox", "segm"):
+        raise SystemExit(f"Unsupported iou_type in competition/config.yaml: {iou_type}")
 
-    allowed_image_ids = {int(x["id"]) for x in meta["images"]}
-    allowed_category_ids = {int(c["id"]) for c in meta["categories"]}
+    try:
+        predictions = json.loads(Path(pred_path).read_text(encoding="utf-8"))
+        test_metadata = json.loads(Path(images_test_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"Could not read submission or test metadata JSON: {exc}")
 
-    for i, pred in enumerate(preds):
-        if not isinstance(pred, dict):
-            raise SystemExit(f"Error: row {i} is not an object.")
+    if not isinstance(predictions, list):
+        raise SystemExit("Submission must be a JSON array of COCO prediction records.")
+    if not predictions:
+        raise SystemExit("Submission is empty.")
+    if not isinstance(test_metadata, dict):
+        raise SystemExit("Test metadata must be a COCO JSON object.")
+
+    images = {int(image["id"]): image for image in test_metadata.get("images", [])}
+    categories = {int(category["id"]) for category in test_metadata.get("categories", [])}
+    if not images or not categories:
+        raise SystemExit("Test metadata must contain images and categories.")
+
+    for index, prediction in enumerate(predictions):
+        if not isinstance(prediction, dict):
+            raise SystemExit(f"Error: row {index} is not an object.")
 
         required = {"image_id", "category_id", "score"}
-        required |= {"bbox"} if iou_type == "bbox" else {"segmentation"}
-        missing = required - set(pred)
+        required.add("bbox" if iou_type == "bbox" else "segmentation")
+        missing = required - prediction.keys()
         if missing:
-            raise SystemExit(f"Error: row {i} missing fields: {sorted(missing)}")
+            raise SystemExit(f"Error: row {index} missing fields: {sorted(missing)}")
 
-        if int(pred["image_id"]) not in allowed_image_ids:
-            raise SystemExit(f"Error: row {i} has unknown image_id={pred['image_id']}")
-        if int(pred["category_id"]) not in allowed_category_ids:
-            raise SystemExit(f"Error: row {i} has unknown category_id={pred['category_id']}")
+        try:
+            image_id = int(prediction["image_id"])
+            category_id = int(prediction["category_id"])
+        except (TypeError, ValueError):
+            raise SystemExit(f"Error: row {index} image_id and category_id must be integers.")
 
-        score = float(pred["score"])
-        if not (0.0 <= score <= 1.0):
-            raise SystemExit(f"Error: row {i} score must be in [0,1].")
+        if image_id not in images:
+            raise SystemExit(f"Error: row {index} has unknown image_id={image_id}.")
+        if category_id not in categories:
+            raise SystemExit(f"Error: row {index} has unknown category_id={category_id}.")
+
+        score = finite_number(prediction["score"], "score", index)
+        if not 0.0 <= score <= 1.0:
+            raise SystemExit(f"Error: row {index} score must be in [0, 1].")
 
         if iou_type == "bbox":
-            bbox = pred["bbox"]
+            bbox = prediction["bbox"]
             if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
-                raise SystemExit(f"Error: row {i} bbox must be [x,y,w,h].")
-            if float(bbox[2]) <= 0 or float(bbox[3]) <= 0:
-                raise SystemExit(f"Error: row {i} bbox width/height must be positive.")
+                raise SystemExit(f"Error: row {index} bbox must be [x, y, width, height].")
+            x, y, width, height = [
+                finite_number(value, "bbox coordinate", index) for value in bbox
+            ]
+            if width <= 0 or height <= 0:
+                raise SystemExit(f"Error: row {index} bbox width and height must be positive.")
+            image = images[image_id]
+            if x < 0 or y < 0 or x + width > int(image["width"]) + 1 or y + height > int(image["height"]) + 1:
+                raise SystemExit(f"Error: row {index} bbox lies outside image {image_id}.")
         else:
-            seg = pred["segmentation"]
-            if not isinstance(seg, (list, dict)) or not seg:
-                raise SystemExit(f"Error: row {i} segmentation must be non-empty list or RLE dict.")
+            segmentation = prediction["segmentation"]
+            if not isinstance(segmentation, (list, dict)) or not segmentation:
+                raise SystemExit(f"Error: row {index} segmentation must be non-empty polygons or RLE.")
+            if isinstance(segmentation, dict) and not {"size", "counts"}.issubset(segmentation):
+                raise SystemExit(f"Error: row {index} RLE segmentation requires size and counts.")
 
-    print("Validation Successful")
+    print(f"Validation successful: {len(predictions)} predictions across {len(images)} test images.")
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        raise SystemExit("Usage: validate_submission.py <predictions.json> <images_test.json>")
+        raise SystemExit("Usage: python competition/validate_submission.py <predictions.json> <images_test.json>")
     main(sys.argv[1], sys.argv[2])
