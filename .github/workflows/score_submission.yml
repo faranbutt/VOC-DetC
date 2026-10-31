@@ -139,7 +139,7 @@ jobs:
           fi
 
       - name: Notify Google Sheets of scoring result
-        if: always() && env.CALLBACK_URL != '' && env.CALLBACK_TOKEN != ''
+        if: always()
         env:
           CALLBACK_URL: ${{ secrets.GOOGLE_SHEETS_CALLBACK_URL }}
           CALLBACK_TOKEN: ${{ secrets.GOOGLE_SHEETS_CALLBACK_TOKEN }}
@@ -152,6 +152,10 @@ jobs:
           import os
           import urllib.request
           from pathlib import Path
+
+          if not os.environ.get("CALLBACK_URL") or not os.environ.get("CALLBACK_TOKEN"):
+              print("Google Sheets callback secrets are not configured; skipping callback.")
+              raise SystemExit(0)
 
           metrics_path = Path("submissions/temp/metrics.json")
           metrics = json.loads(metrics_path.read_text()) if metrics_path.is_file() else {}
