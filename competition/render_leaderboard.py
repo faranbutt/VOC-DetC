@@ -1,6 +1,7 @@
 import csv
 import html
-from datetime import datetime
+import math
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,85 +10,97 @@ MD_PATH = ROOT / "leaderboard" / "leaderboard.md"
 HTML_PATH = ROOT / "docs" / "index.html"
 
 
-def safe_float(x):
+def score(value):
     try:
-        return float(x)
+        number = float(value)
+        return number if math.isfinite(number) else float("-inf")
     except (TypeError, ValueError):
         return float("-inf")
+
+
+def cell(value):
+    return html.escape(str(value if value is not None else ""), quote=True)
 
 
 def main():
     rows = []
     if CSV_PATH.exists():
-        with CSV_PATH.open("r", encoding="utf-8") as f:
-            rows = [r for r in csv.DictReader(f) if (r.get("team") or "").strip()]
+        with CSV_PATH.open("r", newline="", encoding="utf-8") as handle:
+            rows = [
+                row for row in csv.DictReader(handle)
+                if (row.get("team") or "").strip()
+            ]
 
-    rows.sort(key=lambda r: (-safe_float(r.get("AP")), r.get("timestamp_utc", "")))
+    rows.sort(key=lambda row: (-score(row.get("AP")), row.get("timestamp_utc", "")))
 
-    md = ["# Leaderboard\n\n",
-          "| Rank | Team | AP | AP50 | AP75 | Author | Model | Run | Date (UTC) | Notes |\n",
-          "|---:|---|---:|---:|---:|---|---|---|---|---|\n"]
-
+    markdown = [
+        "# ViSC-Bench Leaderboard\n\n",
+        "| Rank | Team | AP | AP50 | AP75 | Model | Date (UTC) |\n",
+        "|---:|---|---:|---:|---:|---|---|\n",
+    ]
     html_rows = []
-    for i, r in enumerate(rows, start=1):
-        ap = r.get("AP", "0")
-        md.append(
-            f"| {i} | {r.get('team','')} | **{ap}** | {r.get('AP50','')} | "
-            f"{r.get('AP75','')} | {r.get('author_type','')} | "
-            f"`{r.get('model','')}` | {r.get('run_id','')} | "
-            f"{r.get('timestamp_utc','')} | {r.get('notes','')} |\n"
+    for rank, row in enumerate(rows, start=1):
+        ap = row.get("AP", "")
+        markdown.append(
+            f"| {rank} | {row.get('team', '')} | {ap} | "
+            f"{row.get('AP50', '')} | {row.get('AP75', '')} | "
+            f"{row.get('model', '')} | {row.get('timestamp_utc', '')} |\n"
         )
         html_rows.append(
             "<tr>"
-            f"<td>{i}</td>"
-            f"<td>{html.escape(str(r.get('team','')))}</td>"
-            f"<td><strong>{html.escape(str(ap))}</strong></td>"
-            f"<td>{html.escape(str(r.get('AP50','')))}</td>"
-            f"<td>{html.escape(str(r.get('AP75','')))}</td>"
-            f"<td>{html.escape(str(r.get('author_type','')))}</td>"
-            f"<td>{html.escape(str(r.get('model','')))}</td>"
-            f"<td>{html.escape(str(r.get('run_id','')))}</td>"
-            f"<td>{html.escape(str(r.get('timestamp_utc','')))}</td>"
-            f"<td>{html.escape(str(r.get('notes','')))}</td>"
+            f'<td class="rank">{rank}</td>'
+            f"<td><strong>{cell(row.get('team'))}</strong></td>"
+            f'<td class="score">{cell(f"{score(ap):.4f}" if score(ap) != float("-inf") else "—")}</td>'
+            f"<td>{cell(row.get('AP50'))}</td>"
+            f"<td>{cell(row.get('AP75'))}</td>"
+            f"<td>{cell(row.get('model'))}</td>"
+            f"<td>{cell(row.get('timestamp_utc'))}</td>"
             "</tr>"
         )
 
     MD_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MD_PATH.write_text("".join(md), encoding="utf-8")
+    MD_PATH.write_text("".join(markdown), encoding="utf-8")
 
+    updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    empty_row = '<tr><td colspan="7" class="empty">No valid submissions yet. Be the first!</td></tr>'
     html_doc = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Image Competition Leaderboard</title>
+<meta name="description" content="Official ViSC-Bench corruption-robust grape instance segmentation competition leaderboard.">
+<title>ViSC-Bench | Leaderboard</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 40px; background:#f4f4f9; color:#222; }}
-.container {{ max-width:1200px; margin:auto; }}
-table {{ border-collapse:collapse; width:100%; background:white; border-radius:8px; overflow:hidden; box-shadow:0 4px 6px rgba(0,0,0,.1); }}
-th, td {{ padding:12px; text-align:left; border-bottom:1px solid #eee; }}
-th {{ background:#2c3e50; color:white; font-size:13px; text-transform:uppercase; }}
-tr:hover {{ background:#f9f9f9; }}
-h1 {{ text-align:center; color:#2c3e50; }}
-.timestamp {{ text-align:center; color:#666; font-size:.9em; margin-bottom:24px; }}
+:root {{ color-scheme: dark; --bg:#0b1020; --panel:#121b2d; --line:#26344c; --text:#edf2fa; --muted:#9eacc2; --accent:#8db5ff; }}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; padding:40px 20px; background:var(--bg); color:var(--text); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }}
+main {{ max-width:1120px; margin:0 auto; }}
+h1 {{ margin:0 0 8px; font-size:clamp(2rem,5vw,3rem); letter-spacing:-.04em; }}
+.subtitle {{ margin:0 0 28px; color:var(--muted); }}
+.panel {{ overflow-x:auto; border:1px solid var(--line); border-radius:14px; background:var(--panel); }}
+table {{ width:100%; border-collapse:collapse; min-width:720px; }}
+th,td {{ padding:14px 16px; text-align:left; border-bottom:1px solid var(--line); }}
+th {{ color:var(--muted); font-size:.78rem; letter-spacing:.07em; text-transform:uppercase; }}
+tbody tr:last-child td {{ border-bottom:0; }}
+tbody tr:hover {{ background:#ffffff08; }}
+.rank,.score {{ color:var(--accent); font-weight:700; }}
+.empty {{ padding:32px; color:var(--muted); text-align:center; }}
+footer {{ margin-top:18px; color:var(--muted); font-size:.85rem; }}
+@media(max-width:600px) {{ body {{ padding:28px 12px; }} th,td {{ padding:11px 12px; }} }}
 </style>
 </head>
 <body>
-<div class="container">
-<h1>Image Competition Leaderboard</h1>
-<p class="timestamp">Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
-<table>
-<thead>
-<tr>
-<th>Rank</th><th>Team</th><th>AP</th><th>AP50</th><th>AP75</th>
-<th>Author</th><th>Model</th><th>Run</th><th>Date (UTC)</th><th>Notes</th>
-</tr>
-</thead>
-<tbody>
-{''.join(html_rows)}
-</tbody>
-</table>
-</div>
+<main>
+  <h1>ViSC-Bench</h1>
+  <p class="subtitle">Corruption-Robust Grape Instance Segmentation Benchmark · Official Leaderboard</p>
+  <section class="panel" aria-label="Competition leaderboard">
+    <table>
+      <thead><tr><th>Rank</th><th>Team</th><th>AP (0.50:0.95)</th><th>AP50</th><th>AP75</th><th>Model</th><th>Date (UTC)</th></tr></thead>
+      <tbody>{''.join(html_rows) if html_rows else empty_row}</tbody>
+    </table>
+  </section>
+  <footer>Last updated: {updated}. Scores are computed by the official evaluation pipeline.</footer>
+</main>
 </body>
 </html>
 """
