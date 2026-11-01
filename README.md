@@ -4,6 +4,9 @@
 
 VOC-DeTC is an wine-detection benchmark for evaluating how well models detect wine grapes in images affected by corruption. Participants submit predicted bounding boxes and confidence scores in COCO results JSON format. Submissions are evaluated automatically against the private test annotations.
 
+![Wine Grape Detection Example](images/wine_detec.png)
+*Example of bounding box annotations for wine grape detection.*
+
 ## Public data
 
 The public dataset is organized as follows:
