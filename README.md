@@ -1,5 +1,5 @@
-# ViSC-Bench
-Vine Instance Segmentation under Corruption
+# VOC-DeTC
+VOC Object Detection under Corruption
 ## Public data
 
 - `data/public/images/train/`
