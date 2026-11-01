@@ -2,7 +2,7 @@
 
 **VOC Object Detection under Corruption**
 
-VOC-DeTC is an object-detection benchmark for evaluating how well models detect objects in images affected by corruption. Participants submit predicted bounding boxes and confidence scores in COCO results JSON format. Submissions are evaluated automatically against the private test annotations.
+VOC-DeTC is an wine-detection benchmark for evaluating how well models detect wine grapes in images affected by corruption. Participants submit predicted bounding boxes and confidence scores in COCO results JSON format. Submissions are evaluated automatically against the private test annotations.
 
 ## Public data
 
